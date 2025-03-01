@@ -6,6 +6,7 @@ const { processMonitoringPriceTag } = require('./pluProcessor');
 const { restartBot } = require('./restartBot');
 const { sendProtectedMessage } = require('./antiProtection');
 const { getUserRaks, saveUserRaks, deleteRak } = require('./rakManager');
+const { addToBroadcastList, sendBroadcast } = require('./broadcast'); // Import modul broadcast
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!TOKEN) {
@@ -25,7 +26,7 @@ const isAllowedGroup = (chatId) => ALLOWED_GROUPS.has(chatId);
 const getMainMenuKeyboard = (isAdmin) => ({
     reply_markup: {
         keyboard: isAdmin
-            ? [["Tambah Data", "Pencarian Barcode"], ["Monitoring Price Tag", "Restart Bot", "Tambah Rak Simpan", "Pilih Rak"]]
+            ? [["Tambah Data", "Pencarian Barcode"], ["Monitoring Price Tag", "Restart Bot", "Tambah Rak Simpan", "Pilih Rak", "Broadcast"]]
             : [["Pencarian Barcode", "Monitoring Price Tag", "Tambah Rak Simpan", "Pilih Rak"]],
         resize_keyboard: true,
         one_time_keyboard: false
@@ -109,7 +110,8 @@ const FITUR_MAPPING = {
     "Monitoring Price Tag": { handler: handleMonitoring, adminOnly: false },
     "Restart Bot": { handler: handleRestart, adminOnly: true },
     "Tambah Rak Simpan": { handler: handleTambahRak, adminOnly: false },
-    "Pilih Rak": { handler: handlePilihRak, adminOnly: false }
+    "Pilih Rak": { handler: handlePilihRak, adminOnly: false },
+    "Broadcast": { handler: handleBroadcast, adminOnly: true } // Tambahkan fitur broadcast
 };
 
 // **Handler untuk pesan masuk**
@@ -140,6 +142,9 @@ bot.on('message', async (msg) => {
         const state = userState.get(chatId);
         if (state.handler) await state.handler(chatId, text, userId);
     }
+
+    // Tambahkan pengguna/grup ke daftar broadcast
+    addToBroadcastList(chatId, userId);
 });
 
 // **Fungsi Tambah Data**
@@ -299,6 +304,24 @@ async function handleDeleteRak(chatId, userId, rakName) {
     }
 
     await handlePilihRak(chatId, userId);
+}
+
+// **Fungsi Broadcast**
+async function handleBroadcast(chatId, userId) {
+    await sendMessageWithQueue(chatId, "📝 Silakan kirim pesan yang ingin di-broadcast:", {}, userId);
+    userState.set(chatId, { handler: handleBroadcastMessage });
+}
+
+async function handleBroadcastMessage(chatId, message) {
+    if (!message.trim()) {
+        return sendMessageWithQueue(chatId, "⚠️ Pesan tidak boleh kosong!");
+    }
+
+    // Kirim pesan broadcast
+    await sendBroadcast(bot, message);
+
+    // Hapus state setelah selesai
+    userState.delete(chatId);
 }
 
 console.log("✅ Bot Telegram berjalan...");
