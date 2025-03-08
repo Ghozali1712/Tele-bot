@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const workerpool = require('workerpool');
 const os = require('os');
+const PQueue = require('p-queue').default; // 🔹 Import library antrian
 const { sendProtectedMessage } = require('./antiProtection'); // 🔹 Import proteksi
 
 const barcodeCache = new Map();
@@ -36,7 +37,10 @@ async function loadBarcodeData() {
 loadBarcodeData();
 
 // **Konfigurasi worker pool**
-const numWorkers = Math.max(2, os.cpus().length - 2);
+let numWorkers = Math.min(4, os.cpus().length); // Batasi maksimal 4 worker
+if (numWorkers < 1) {
+    numWorkers = 2; // Default ke 2 worker jika hasilnya tidak valid
+}
 const pool = workerpool.pool(path.join(__dirname, 'worker.js'), { maxWorkers: numWorkers });
 log.info(`🚀 Worker pool dibuat dengan ${numWorkers} pekerja.`);
 
@@ -64,11 +68,43 @@ async function sendTelegramReport(bot, plu, username) {
     const message = `🔴 *Laporan PLU Tidak Ditemukan*\n\n📌 *PLU:* ${plu}\n👤 *Pelapor:* @${username || "Tidak ada username"}`;
 
     try {
-        await bot.sendMessage(ADMIN_TELEGRAM_ID, message, { parse_mode: "Markdown" });
+        await sendWithRetry(bot, ADMIN_TELEGRAM_ID, null, message, { parse_mode: "Markdown" });
         log.info(`✅ Laporan dikirim ke admin: ${message}`);
     } catch (error) {
         log.error("❌ Gagal mengirim laporan ke admin:", error);
     }
+}
+
+// **Fungsi untuk Mengirim Pesan dengan Retry dan Backoff**
+async function sendWithRetry(bot, chatId, filePath, caption, options = {}, retries = 3, backoff = 1000) {
+    try {
+        if (filePath) {
+            await bot.sendPhoto(chatId, filePath, { caption, ...options });
+        } else {
+            await bot.sendMessage(chatId, caption, options);
+        }
+    } catch (error) {
+        if (error.response && error.response.statusCode === 429 && retries > 0) {
+            const waitTime = error.response.body.parameters?.retry_after * 1000 || backoff; // Gunakan retry_after dari Telegram atau default backoff
+            log.warn(`⚠️ Rate limit terdeteksi. Menunggu ${waitTime}ms sebelum mencoba lagi...`);
+            await delay(waitTime);
+            return sendWithRetry(bot, chatId, filePath, caption, options, retries - 1, backoff * 2); // Exponential backoff
+        } else {
+            throw error; // Lempar error jika bukan 429 atau retries habis
+        }
+    }
+}
+
+// **Fungsi untuk Mengirim Pesan dengan Antrian**
+const queue = new PQueue({ concurrency: 1, interval: 1000 }); // 1 pesan per detik
+
+async function sendWithQueue(bot, chatId, filePath, caption, options = {}) {
+    await queue.add(() => sendWithRetry(bot, chatId, filePath, caption, options));
+}
+
+// **Fungsi untuk Delay**
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // **Fungsi Pencarian Barcode (Admin Dikecualikan dari Proteksi)**
@@ -107,9 +143,17 @@ async function cariKodeDiExcelV2(bot, kodeList, chatId, userId) {
                     await fs.writeFile(filePath, barcodeBuffer);
                     log.info(`📦 Gambar barcode disimpan: ${filePath}`);
 
+                    // **Buat caption dengan deskripsi produk**
+                    const caption = `
+🔍 *Hasil Pencarian:*
+🏷️ *PLU:* ${item.plu}
+📦 *Barcode:* ${item.barcode}
+📝 *Deskripsi:* ${item.deskripsi || "Tidak ada deskripsi"}
+                    `.trim();
+
                     // **Mengirim gambar barcode dengan atau tanpa proteksi**
-                    await bot.sendPhoto(chatId, filePath, {
-                        caption: `🔍 *Hasil Pencarian:*\n🏷️ *PLU:* ${item.plu}\n📦 *Barcode:* ${item.barcode}`,
+                    await sendWithQueue(bot, chatId, filePath, {
+                        caption: caption,
                         parse_mode: "Markdown",
                         protect_content: !isAdmin // 🔒 Non-admin tidak bisa forward, admin bebas
                     });
@@ -124,7 +168,7 @@ async function cariKodeDiExcelV2(bot, kodeList, chatId, userId) {
         // **Kirim notifikasi jika ada PLU yang tidak ditemukan**
         if (notFoundPLUs.size > 0) {
             const notFoundMessage = `⚠️ PLU berikut tidak ditemukan di database:\n${[...notFoundPLUs].join(', ')}`;
-            await sendProtectedMessage(bot, chatId, notFoundMessage);
+            await sendWithQueue(bot, chatId, null, notFoundMessage);
 
             // **Kirim laporan ke admin untuk setiap PLU yang tidak ditemukan**
             for (const plu of notFoundPLUs) {
@@ -136,7 +180,7 @@ async function cariKodeDiExcelV2(bot, kodeList, chatId, userId) {
 
     } catch (error) {
         log.error(`⚠️ Kesalahan pencarian barcode untuk "${kodeList}": ${error.message}`);
-        await sendProtectedMessage(bot, chatId, `⚠️ Terjadi kesalahan saat mencari barcode.`);
+        await sendWithQueue(bot, chatId, null, `⚠️ Terjadi kesalahan saat mencari barcode.`);
     }
 }
 
