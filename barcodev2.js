@@ -12,7 +12,7 @@ let barcodeData = [];
 const config = {
     ADMIN_LIST: new Set([5183628785, 987654321]), // 🔹 Ganti dengan daftar ID admin
     ADMIN_TELEGRAM_ID: 5183628785, // 🔹 Ganti dengan ID Telegram Admin
-    MAX_WORKERS: Math.min(2, os.cpus().length), // Batasi maksimal 4 worker
+    MAX_WORKERS: Math.min(1, os.cpus().length), // Batasi maksimal 4 worker
     TEMP_DIR: path.join(__dirname, 'temp'), // Direktori untuk menyimpan file sementara
     BARCODE_FILE: path.join(__dirname, 'barcode.json'), // File data barcode
     LOG_FILE: path.join(__dirname, 'app.log') // File untuk menyimpan log
