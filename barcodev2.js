@@ -2,21 +2,26 @@ const fs = require('fs').promises;
 const path = require('path');
 const workerpool = require('workerpool');
 const os = require('os');
+const PQueue = require('p-queue').default; // 🔹 Import library antrian
 const { sendProtectedMessage } = require('./antiProtection'); // 🔹 Import proteksi
 
 const barcodeCache = new Map();
 let barcodeData = [];
 
-// 🔹 Konfigurasi
+// 🔹 Pindahkan konfigurasi ke file terpisah
 const config = {
     ADMIN_LIST: new Set([5183628785, 987654321]), // 🔹 Ganti dengan daftar ID admin
     ADMIN_TELEGRAM_ID: 5183628785, // 🔹 Ganti dengan ID Telegram Admin
     MAX_WORKERS: Math.min(4, os.cpus().length), // Batasi maksimal 4 worker
     TEMP_DIR: path.join(__dirname, 'temp'), // Direktori untuk menyimpan file sementara
     BARCODE_FILE: path.join(__dirname, 'barcode.json'), // File data barcode
-    LOG_FILE: path.join(__dirname, 'app.log'), // File untuk menyimpan log
-    MESSAGE_DELAY: 2000 // 🔹 Jeda 2 detik antara pengiriman pesan
+    LOG_FILE: path.join(__dirname, 'app.log') // File untuk menyimpan log
 };
+
+// 🔹 Validasi jumlah worker
+if (config.MAX_WORKERS < 1) {
+    config.MAX_WORKERS = 1; // Default ke 2 worker jika hasilnya tidak valid
+}
 
 // 🔹 Logger yang menyimpan log ke file
 const log = {
@@ -55,6 +60,10 @@ async function loadBarcodeData() {
     }
 }
 
+// 🔹 Konfigurasi worker pool
+const pool = workerpool.pool(path.join(__dirname, 'worker.js'), { maxWorkers: config.MAX_WORKERS });
+log.info(`🚀 Worker pool dibuat dengan ${config.MAX_WORKERS} pekerja.`);
+
 // 🔹 Fungsi untuk membuat barcode
 async function createBarcodeWithWorker(barcode) {
     if (barcodeCache.has(barcode)) {
@@ -74,24 +83,50 @@ async function createBarcodeWithWorker(barcode) {
     }
 }
 
-// 🔹 Fungsi untuk Mengirim Pesan dengan Jeda
-async function sendWithDelay(bot, chatId, filePath, caption, options = {}) {
+// 🔹 Fungsi untuk Mengirim Laporan PLU Tidak Ditemukan ke Admin
+async function sendTelegramReport(bot, pluList, username) {
+    const message = `
+🔴 *Laporan PLU Tidak Ditemukan*
+👤 *Pelapor:* @${username || "Tidak ada username"}
+📌 *PLU yang Tidak Ditemukan:*
+${pluList.join(', ')}
+    `.trim();
+
+    try {
+        await sendWithRetry(bot, config.ADMIN_TELEGRAM_ID, null, message, { parse_mode: "Markdown" });
+        await log.info(`✅ Laporan dikirim ke admin: ${message}`);
+    } catch (error) {
+        await log.error("❌ Gagal mengirim laporan ke admin:", error);
+    }
+}
+
+// 🔹 Fungsi untuk Mengirim Pesan dengan Retry dan Backoff
+async function sendWithRetry(bot, chatId, filePath, caption, options = {}, retries = 3, backoff = 1000) {
     try {
         if (filePath) {
+            // 🔹 Kirim gambar dengan caption
             await bot.sendPhoto(chatId, filePath, { caption, ...options });
         } else {
+            // 🔹 Kirim pesan teks biasa
             await bot.sendMessage(chatId, caption, options);
         }
     } catch (error) {
-        if (error.response && error.response.statusCode === 429) {
-            const waitTime = error.response.body.parameters?.retry_after * 1000 || config.MESSAGE_DELAY;
+        if (error.response && error.response.statusCode === 429 && retries > 0) {
+            const waitTime = error.response.body.parameters?.retry_after * 1000 || backoff; // Gunakan retry_after dari Telegram atau default backoff
             await log.warn(`⚠️ Rate limit terdeteksi. Menunggu ${waitTime}ms sebelum mencoba lagi...`);
             await delay(waitTime);
-            return sendWithDelay(bot, chatId, filePath, caption, options); // Coba lagi setelah menunggu
+            return sendWithRetry(bot, chatId, filePath, caption, options, retries - 1, backoff * 2); // Exponential backoff
         } else {
-            throw error; // Lempar error jika bukan 429
+            throw error; // Lempar error jika bukan 429 atau retries habis
         }
     }
+}
+
+// 🔹 Fungsi untuk Mengirim Pesan dengan Antrian
+const queue = new PQueue({ concurrency: 1, interval: 1000 }); // 1 pesan per detik
+
+async function sendWithQueue(bot, chatId, filePath, caption, options = {}) {
+    await queue.add(() => sendWithRetry(bot, chatId, filePath, caption, options));
 }
 
 // 🔹 Fungsi untuk Delay
@@ -99,7 +134,7 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🔹 Fungsi Pencarian Barcode
+// 🔹 Fungsi Pencarian Barcode (Admin Dikecualikan dari Proteksi)
 async function cariKodeDiExcelV2(bot, kodeList, chatId, userId) {
     try {
         await log.info(`🔍 Memulai pencarian untuk PLU: ${kodeList}`);
@@ -134,7 +169,8 @@ async function cariKodeDiExcelV2(bot, kodeList, chatId, userId) {
             }
         }
 
-        // 🔹 Kirim gambar barcode yang ditemukan satu per satu
+        // 🔹 Kirim gambar barcode yang ditemukan
+        const sendPromises = []; // Untuk menyimpan semua promise pengiriman gambar
         for (const { kode, hasil } of foundPLUs) {
             await log.info(`✅ Ditemukan ${hasil.length} hasil untuk PLU "${kode}".`);
 
@@ -155,14 +191,12 @@ async function cariKodeDiExcelV2(bot, kodeList, chatId, userId) {
 📝 *Deskripsi:* ${item.deskripsi || "Tidak ada deskripsi"}
                     `.trim();
 
-                    // 🔹 Kirim pesan dengan jeda
-                    await sendWithDelay(bot, chatId, filePath, caption, {
+                    // 🔹 Tambahkan promise pengiriman gambar ke dalam array
+                    const sendPromise = sendWithQueue(bot, chatId, filePath, caption, {
                         parse_mode: "Markdown",
                         protect_content: !isAdmin // 🔒 Non-admin tidak bisa forward, admin bebas
                     });
-
-                    // 🔹 Tunggu jeda waktu sebelum mengirim pesan berikutnya
-                    await delay(config.MESSAGE_DELAY);
+                    sendPromises.push(sendPromise);
 
                 } catch (workerError) {
                     await log.error(`❌ Gagal membuat barcode untuk ${item.plu}: ${workerError.message}`);
@@ -171,24 +205,30 @@ async function cariKodeDiExcelV2(bot, kodeList, chatId, userId) {
             }
         }
 
-        // 🔹 Kirim notifikasi ke pengguna tentang PLU yang tidak ditemukan
+        // 🔹 Tunggu semua gambar selesai dikirim
+        await Promise.all(sendPromises);
+
+        // 🔹 Kirim notifikasi ke pengguna tentang PLU yang tidak ditemukan setelah semua gambar dikirim
         if (notFoundPLUs.size > 0) {
             const notFoundMessage = `
 ⚠️ *PLU Berikut Tidak Ditemukan:*
 ${[...notFoundPLUs].join(', ')}
             `.trim();
 
-            await sendWithDelay(bot, chatId, null, notFoundMessage, { 
+            await sendWithQueue(bot, chatId, null, notFoundMessage, { 
                 parse_mode: "Markdown", 
                 protect_content: !isAdmin 
             });
+
+            // 🔹 Kirim laporan ke admin untuk semua PLU yang tidak ditemukan
+            await sendTelegramReport(bot, [...notFoundPLUs], username);
         }
 
         await log.info(`✅ Semua barcode yang ditemukan telah diproses dan dikirim.`);
 
     } catch (error) {
         await log.error(`⚠️ Kesalahan pencarian barcode untuk "${kodeList}": ${error.message}`);
-        await sendWithDelay(bot, chatId, null, `⚠️ Terjadi kesalahan saat mencari barcode.`, { protect_content: !isAdmin });
+        await sendWithQueue(bot, chatId, null, `⚠️ Terjadi kesalahan saat mencari barcode.`, { protect_content: !isAdmin });
     }
 }
 
