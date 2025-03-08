@@ -36,7 +36,7 @@ async function generateBarcode(barcodeData) {
         const barcodeBuffer = await bwipjs.toBuffer({
             bcid: 'code128',          // Jenis barcode
             text: barcodeData,
-            scale: 8,                 // Skala optimal untuk kejelasan
+            scale: 15,                 // Skala optimal untuk kejelasan
             height: 10,               // Tinggi lebih besar agar mudah dipindai
             includetext: true,        // Tampilkan teks di bawah barcode
             textxalign: 'center',     // Posisikan teks di tengah
