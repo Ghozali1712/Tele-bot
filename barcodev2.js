@@ -20,7 +20,7 @@ const config = {
 
 // 🔹 Validasi jumlah worker
 if (config.MAX_WORKERS < 1) {
-    config.MAX_WORKERS = 1; // Default ke 2 worker jika hasilnya tidak valid
+    config.MAX_WORKERS = false; // Default ke 2 worker jika hasilnya tidak valid
 }
 
 // 🔹 Logger yang menyimpan log ke file
