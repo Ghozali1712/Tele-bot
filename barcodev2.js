@@ -123,7 +123,7 @@ async function sendWithRetry(bot, chatId, filePath, caption, options = {}, retri
 }
 
 // 🔹 Fungsi untuk Mengirim Pesan dengan Antrian
-const queue = new PQueue({ concurrency: 1, interval: 1000 }); // 1 pesan per detik
+const queue = new PQueue({ concurrency: 1, interval: 2000 }); // 1 pesan per 2 detik
 
 async function sendWithQueue(bot, chatId, filePath, caption, options = {}) {
     await queue.add(() => sendWithRetry(bot, chatId, filePath, caption, options));
