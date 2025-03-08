@@ -36,14 +36,14 @@ async function generateBarcode(barcodeData) {
         const barcodeBuffer = await bwipjs.toBuffer({
             bcid: 'code128',          // Jenis barcode
             text: barcodeData,
-            scale: 15,                 // Skala optimal untuk kejelasan
-            height: 10,               // Tinggi lebih besar agar mudah dipindai
+            scale: 50,                 // Skala optimal untuk kejelasan
+            height: 15,               // Tinggi lebih besar agar mudah dipindai
             includetext: true,        // Tampilkan teks di bawah barcode
             textxalign: 'center',     // Posisikan teks di tengah
             backgroundcolor: 'FFFFFF', // Latar belakang putih
             foregroundcolor: '000000', // Garis hitam
-            paddingwidth: 10,         // Padding untuk visibilitas lebih baik
-            paddingheight: 5
+            paddingwidth: 15,         // Padding untuk visibilitas lebih baik
+            paddingheight: 10
         });
 
         log.info(`✅ Barcode untuk "${barcodeData}" berhasil dibuat.`);
