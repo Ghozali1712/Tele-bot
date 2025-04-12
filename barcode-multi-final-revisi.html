@@ -47,6 +47,16 @@
       border-radius: 10px;
       box-shadow: 0 0 15px rgba(0,0,0,0.1);
     }
+    #barcode {
+      text-align: center;
+    }
+    #barcode-info {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 16px;
+      color: #007bff;
+      font-weight: bold;
+    }
     #nav-buttons {
       margin-top: 20px;
     }
@@ -66,6 +76,7 @@
 
   <div id="barcode-container">
     <div id="barcode"></div>
+    <div id="barcode-info"></div>
     <div id="nav-buttons">
       <button onclick="prevBarcode()">◀ Sebelumnya</button>
       <button onclick="nextBarcode()">Berikutnya ▶</button>
@@ -93,11 +104,18 @@
     function showBarcode() {
       if (barcodes.length === 0) {
         document.getElementById('barcode').innerHTML = "<p>Tidak ada PLU valid.</p>";
+        document.getElementById('barcode-info').innerHTML = "";
+        document.getElementById('nav-buttons').style.display = "none";
         return;
       }
 
+      document.getElementById('nav-buttons').style.display = "block";
       const barcodeDiv = document.getElementById('barcode');
       barcodeDiv.innerHTML = "";
+      
+      // Menampilkan informasi nomor urut dan total barcode
+      const barcodeInfo = document.getElementById('barcode-info');
+      barcodeInfo.innerHTML = `Barcode ${currentIndex + 1} dari ${barcodes.length}`;
 
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       JsBarcode(svg, barcodes[currentIndex], {
@@ -110,18 +128,54 @@
       });
 
       barcodeDiv.appendChild(svg);
+      
+      // Mengatur tampilan tombol navigasi berdasarkan posisi
+      const prevButton = document.querySelector('#nav-buttons button:first-child');
+      const nextButton = document.querySelector('#nav-buttons button:last-child');
+      
+      // Jika di awal daftar barcode
+      if (currentIndex === 0) {
+        prevButton.disabled = true;
+        prevButton.style.opacity = '0.5';
+        prevButton.style.cursor = 'not-allowed';
+        prevButton.innerHTML = '◀ Awal';
+      } else {
+        prevButton.disabled = false;
+        prevButton.style.cursor = 'pointer';
+        prevButton.style.opacity = '1';
+        prevButton.innerHTML = '◀ Sebelumnya';
+      }
+      
+      // Jika di akhir daftar barcode
+      if (currentIndex === barcodes.length - 1) {
+        nextButton.disabled = true;
+        nextButton.style.opacity = '0.5';
+        nextButton.style.cursor = 'not-allowed';
+        nextButton.innerHTML = 'Akhir ▶';
+      } else {
+        nextButton.disabled = false;
+        nextButton.style.opacity = '1';
+        nextButton.style.cursor = 'pointer';
+        nextButton.innerHTML = 'Berikutnya ▶';
+      }
     }
 
     function prevBarcode() {
       if (barcodes.length === 0) return;
-      currentIndex = (currentIndex - 1 + barcodes.length) % barcodes.length;
-      showBarcode();
+      // Mencegah berputar ke akhir saat di awal daftar
+      if (currentIndex > 0) {
+        currentIndex--;
+        showBarcode();
+      }
     }
 
     function nextBarcode() {
       if (barcodes.length === 0) return;
-      currentIndex = (currentIndex + 1) % barcodes.length;
-      showBarcode();
+      // Mencegah berputar ke awal saat di akhir daftar
+      if (currentIndex < barcodes.length - 1) {
+        currentIndex++;
+        showBarcode();
+      }
     }
   </script>
 
