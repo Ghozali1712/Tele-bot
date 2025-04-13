@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring Pricetag</title>
+    <script src="https://cdn.jsdelivr.net/npm/bwip-js@4.1.1/dist/bwip-js.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="user-tracking.js"></script>
+    <script src="analytics.js"></script>
+    <script src="auth.js"></script>
+    <script src="auth-check.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6));
+        }
+        .container {
+            background-color: #444444;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #FFFFFF;
+            text-align: center;
+            text-shadow: 0 0 5px #00BFFF;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        input[type="text"], select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #555555;
+            border-radius: 4px;
+            background-color: #444444;
+            color: #ffffff;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        button {
+            background: #00BFFF;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #2196f3;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        .barcode {
+            margin: 20px auto;
+            text-align: center;
+            background-color: white;
+            padding: 20px;
+            max-width: fit-content;
+        }
+        .barcode canvas {
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .back-button {
+            background: #555555;
+            margin-top: 20px;
+        }
+        .back-button:hover {
+            background-color: #666666;
+        }
+        .navigation-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .nav-button {
+            background: #00BFFF;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .nav-button:hover {
+            background-color: #2196f3;
+        }
+        .nav-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .not-found-message {
+            margin-top: 15px;
+            padding: 10px;
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            text-align: center;
+        }
+        #qr-reader {
+            width: 100%;
+            margin: 20px 0;
+        }
+        .scan-button {
+            background: #FF5722;
+            margin-right: 10px;
+        }
+        .scan-button:hover {
+            background-color: #E64A19;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Monitoring Pricetag</h1>
+        <div class="form-group">
+            <label for="pluInput" style="color: #00BFFF;">Masukkan PLU (pisahkan dengan koma atau baris baru):</label>
+            <textarea id="pluInput" placeholder="Contoh: 1,2,3
+Atau:
+1
+2
+3"></textarea>
+        </div>
+        <div style="margin-bottom: 20px;">
+            <button class="scan-button" onclick="startScanner()">Scan QR Code</button>
+            <button onclick="generateBarcodes()">Generate Barcode</button>
+        </div>
+        <div id="qr-reader"></div>
+        <div id="result"></div>
+        
+
+        <button class="back-button" onclick="window.location.href='menu.html'">Kembali ke Menu</button>
+    </div>
+
+    <script src="whatsapp-notification.js"></script>
+    <script>
+        let html5QrcodeScanner = null;
+        let currentBarcodeIndex = 0;
+        let barcodes = [];
+        let scannedPLUs = [];
+
+        async function loadBarcodeData() {
+            try {
+                const response = await fetch('barcode.json');
+                if (!response.ok) throw new Error('Failed to load data');
+                const data = await response.json();
+                return data.barcodesheet || [];
+            } catch (error) {
+                console.error('Error loading barcode data:', error);
+                return [];
+            }
+        }
+
+
+
+        // Fungsi untuk memulai scanner QR code
+        function startScanner() {
+            if (html5QrcodeScanner === null) {
+                html5QrcodeScanner = new Html5QrcodeScanner(
+                    "qr-reader",
+                    { fps: 10, qrbox: {width: 250, height: 250} },
+                    false
+                );
+                html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+            } else {
+                html5QrcodeScanner.clear();
+                html5QrcodeScanner = null;
+                document.getElementById('qr-reader').innerHTML = '';
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            // Add scanned PLU to array
+            if (!scannedPLUs.includes(decodedText)) {
+                scannedPLUs.push(decodedText);
+            }
+
+            // Update input field with all scanned PLUs
+            document.getElementById('pluInput').value = scannedPLUs.join(',');
+            generateBarcodes();
+
+            // Clear scanner but don't remove it
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.pause();
+                
+                // Add continue scan button
+                const continueButton = document.createElement('button');
+                continueButton.textContent = 'Lanjutkan Scan';
+                continueButton.onclick = () => {
+                    html5QrcodeScanner.resume();
+                    continueButton.remove();
+                };
+                document.getElementById('qr-reader').appendChild(continueButton);
+            }
+        }
+
+        function onScanFailure(error) {
+            // Handle scan failure, usually better to ignore and keep scanning
+            console.warn(`QR Code scanning failed = ${error}`);
+        }
+
+        function updateNavigationButtons() {
+            const prevButton = document.getElementById('prevButton');
+            const nextButton = document.getElementById('nextButton');
+            prevButton.disabled = currentBarcodeIndex === 0;
+            nextButton.disabled = currentBarcodeIndex === barcodes.length - 1;
+        }
+
+        function showCurrentBarcode() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '';
+
+            if (barcodes.length === 0) return;
+
+            try {
+                const canvas = document.createElement('canvas');
+                bwipjs.toCanvas(canvas, {
+                    bcid: 'code128',
+                    text: barcodes[currentBarcodeIndex].barcode,
+                    scale: 5,
+                    height: 15,
+                    includetext: true,
+                    textxalign: 'center',
+                    textyoffset: 2
+                });
+
+                const container = document.createElement('div');
+                container.className = 'barcode';
+                container.appendChild(canvas);
+
+                // Tambahkan informasi PLU
+                const pluInfo = document.createElement('div');
+                pluInfo.textContent = `PLU: ${barcodes[currentBarcodeIndex].plu}`;
+                pluInfo.style.marginTop = '10px';
+                container.appendChild(pluInfo);
+
+                resultDiv.appendChild(container);
+
+                // Tambahkan tombol navigasi
+                const navButtons = document.createElement('div');
+                navButtons.className = 'navigation-buttons';
+                navButtons.innerHTML = `
+                    <button id="prevButton" class="nav-button" onclick="previousBarcode()">← Sebelumnya</button>
+                    <button id="nextButton" class="nav-button" onclick="nextBarcode()">Selanjutnya →</button>
+                `;
+                resultDiv.appendChild(navButtons);
+
+                updateNavigationButtons();
+            } catch (e) {
+                console.error('Error generating barcode:', e);
+            }
+        }
+
+        function nextBarcode() {
+            if (currentBarcodeIndex < barcodes.length - 1) {
+                currentBarcodeIndex++;
+                showCurrentBarcode();
+            }
+        }
+
+        function previousBarcode() {
+            if (currentBarcodeIndex > 0) {
+                currentBarcodeIndex--;
+                showCurrentBarcode();
+            }
+        }
+
+        async function saveNotFoundPLUs(notFoundPLUs) {
+            try {
+                // Baca data yang sudah ada
+                const response = await fetch('not_found_plus.json');
+                const data = await response.json();
+                
+                // Tambahkan PLU baru yang tidak ditemukan
+                const timestamp = new Date().toISOString();
+                const newNotFoundPLUs = notFoundPLUs.map(plu => ({
+                    plu: plu,
+                    timestamp: timestamp,
+                    status: 'not_found'
+                }));
+                
+                data.not_found_plus = [...data.not_found_plus, ...newNotFoundPLUs];
+                
+                // Simpan kembali ke file
+                const saveResponse = await fetch('save_barcode.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'save_not_found',
+                        data: data
+                    })
+                });
+                
+                if (!saveResponse.ok) {
+                    throw new Error('Gagal menyimpan data PLU tidak ditemukan');
+                }
+            } catch (error) {
+                console.error('Error saving not found PLUs:', error);
+            }
+        }
+
+        async function generateBarcodes() {
+            const pluInput = document.getElementById('pluInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            
+            // Lacak penggunaan fitur
+            window.UserTracking.trackFeatureUsage('Monitoring Pricetag');
+            
+            if (!pluInput) {
+                alert('Silakan masukkan PLU!');
+                return;
+            }
+            
+            // Split input by commas or new lines
+            const plus = pluInput.split(/[,\n]/).map(p => p.trim()).filter(p => p);
+            
+            // Hapus pesan error yang lama jika ada
+            const existingErrorDiv = document.getElementById('errorMessage');
+            if (existingErrorDiv) {
+                existingErrorDiv.remove();
+            }
+
+            resultDiv.innerHTML = '';
+            barcodes = [];
+            currentBarcodeIndex = 0;
+            
+            // Langsung buat barcode dari PLU yang dimasukkan
+            for (const plu of plus) {
+                // Tambahkan PLU ke array barcodes
+                barcodes.push({
+                    plu: plu,
+                    barcode: plu // Gunakan PLU sebagai barcode
+                });
+            }
+            
+            // Tampilkan barcode
+            if (barcodes.length > 0) {
+                showCurrentBarcode();
+            }
+        }
+
+        // Tidak perlu memuat data monitoring status saat halaman dimuat
+    </script>
+</body>
+</html>
