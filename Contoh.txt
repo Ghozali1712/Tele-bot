@@ -1,0 +1,76 @@
+Laporan sales *PALING MURAH*
+Periode : 10 - 16 April2025
+*TCBS HASYIM ASHARI*
+
+*PUCUK HARUM*
+Target: 78
+Sales Shift 1 : 6
+Sales shift 2 : 7
+Total : 99
+Ach: 126%
+
+*CIMORY*
+Target: 105
+Sales shift 1 : 6
+Sales shift 2 : 3
+Total :54
+Ach: 51%
+
+
+*MENTOS*
+Target: 195
+Sales shift 1 : 2
+Sales shift 2 : 2
+Total : 17
+Ach: 8%
+
+*PRISTINE 8.6*
+Target: 90
+Sales shift 1 : 8
+Sales shift 2 : 5
+Total : 102
+Ach: 113%
+
+*INDOMILK KIDS*
+Target: 72
+Sales shift 1 : 0
+Sales shift 2 : 1
+Total : 1
+Ach: 1%
+
+*TARO*
+Target: 41
+Sales shift 1 : 1
+Sales shift 2 : 1
+Total : 10
+Ach: 24%
+
+
+*MAMASUKA*
+Target: 89
+Sales shift 1 : 0
+SaleS shift 2 : 2
+Total : 9
+Ach: 10%
+
+
+*SUNSILK*
+Target: 58
+Sales shif 1 : 0
+Sales shif 2 : 0
+Total: 4
+Ach: 6%
+
+*PEPSODENT*
+Target: 13
+Sales Shif 1 : 2
+Sales Shif 2 : 0
+Total : 7
+Ach: 53%
+
+*ROYALE*
+Target: 33
+Sales Shift 1 : 0
+Sales Shift 2 : 0
+Total : 1
+Ach: 3%
